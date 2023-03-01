@@ -1,0 +1,96 @@
+FROM ubuntu:20.04
+
+# ---------------------------------------------------------------------
+# Install https://github.com/krallin/tini - a very small 'init' process
+# that helps processing signalls sent to the container properly.
+# ---------------------------------------------------------------------
+ARG TINI_VERSION=v0.19.0
+ARG TERRAFORM_VERSION=1.0.0
+ARG ANSIBLE_VERSION=2.10.1
+ARG KUBECTL_VERSION=v1.18.0
+
+RUN apt-get update && \
+    apt-get install -yq --no-install-recommends \
+    jq \
+    curl \
+    unzip \
+    maven \
+    sshpass \
+    dnsutils \
+    python3-pip \
+    python3-dev \
+    python3-setuptools \
+    python3-wheel && \
+    curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 && \
+    chmod +x /usr/local/bin/tini
+
+# Install Boto
+RUN pip3 install wheel botocore boto boto3 ansible==${ANSIBLE_VERSION} awscli
+
+#Install helm
+RUN curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+
+#Install sceptre
+RUN pip install sceptre
+
+#Install Openshift ( for k8s ansible module )
+RUN pip3 install openshift==0.11 kubernetes-validate
+
+#Install kubectl
+RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
+RUN chmod +x ./kubectl
+RUN mv ./kubectl /usr/local/bin/kubectl
+
+# --------------------------------------------------------------------------
+# Install and configure sshd.
+# https://docs.docker.com/engine/examples/running_ssh_service for reference.
+# --------------------------------------------------------------------------
+RUN apt-get install -y openssh-server && \
+    # Creating /run/sshd instead of /var/run/sshd, because in the Debian
+    # image /var/run is a symlink to /run. Creating /var/run/sshd directory
+    # as proposed in the Docker documentation linked above just doesn't
+    # work.
+    mkdir -p /run/sshd
+
+EXPOSE 22
+
+# ----------------------------------------
+# Install GitLab CI required dependencies.
+# ----------------------------------------
+ARG GITLAB_RUNNER_VERSION=v13.0.1
+
+RUN curl -Lo /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/${GITLAB_RUNNER_VERSION}/binaries/gitlab-runner-linux-amd64 && \
+    chmod +x /usr/local/bin/gitlab-runner && \
+    # Test if the downloaded file was indeed a binary and not, for example,
+    # an HTML page representing S3's internal server error message or something
+    # like that.
+    gitlab-runner --version
+
+RUN apt-get install -y bash ca-certificates git git-lfs && \
+    git lfs install --skip-repo
+
+
+#AWS IAM AUTH
+ARG AWS_IAM_AUTHENTICATOR_URL=https://amazon-eks.s3-us-west-2.amazonaws.com/1.14.6/2019-08-22/bin/linux/amd64/aws-iam-authenticator
+ADD ${AWS_IAM_AUTHENTICATOR_URL} /usr/local/bin/aws-iam-authenticator
+RUN chmod +x /usr/local/bin/aws-iam-authenticator
+
+#Terraform
+RUN wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip && \
+    unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip && \
+    mv terraform /usr/local/bin/
+
+# -------------------------------------------------------------------------------------
+# Execute a startup script.
+# https://success.docker.com/article/use-a-script-to-initialize-stateful-container-data
+# for reference.
+# -------------------------------------------------------------------------------------
+
+#install gpg
+RUN apt-get install gnupg -y
+
+RUN apt-get autoremove
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint.sh"]

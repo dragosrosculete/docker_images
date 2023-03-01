@@ -1,0 +1,21 @@
+# include:
+#   - template: Security/Container-Scanning.gitlab-ci.yml
+
+# container_scanning:
+#   variables:
+#     CS_DEFAULT_BRANCH_IMAGE: $CI_REGISTRY_IMAGE:$IMAGE_TAG
+
+stages:
+  - build
+
+build_os:
+  stage: build
+  tags:
+    - shell
+  script:
+    - export IMAGE_TAG="$(date +%Y%m%d)-$CI_COMMIT_SHORT_SHA"
+    - docker login -u "gitlab-ci-token" -p "$CI_BUILD_TOKEN" $CI_REGISTRY
+    - docker build --compress --force-rm --no-cache -t "$CI_REGISTRY_IMAGE:$IMAGE_TAG" .
+    - docker push "$CI_REGISTRY_IMAGE:$IMAGE_TAG"
+    - docker tag "$CI_REGISTRY_IMAGE:$IMAGE_TAG" "$CI_REGISTRY_IMAGE:latest"
+    - docker push "$CI_REGISTRY_IMAGE:latest"

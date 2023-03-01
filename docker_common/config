@@ -1,0 +1,4 @@
+[profile aws-account-dev]
+role_arn = arn:aws:iam::000000000:role/iam_role
+region=eu-west-1
+source_profile = default

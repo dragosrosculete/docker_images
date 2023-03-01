@@ -1,0 +1,1 @@
+Build Common Docker image using Gitlab CI/CD
